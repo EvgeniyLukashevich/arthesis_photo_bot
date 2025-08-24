@@ -20,4 +20,9 @@ class Config:
     TIMEZONE = ZoneInfo('Europe/Moscow')
     REGULAR_POST_HOUR_UTC = os.getenv('REGULAR_POST_HOUR_UTC', '4,6,9,12,15,17,18,19')
     INSTANT_CHECK_MINUTES = int(os.getenv('INSTANT_CHECK_MINUTES', 30))
+    PRODUCTION_MODE = os.getenv('PRODUCTION_MODE', 'False').lower() == 'true'
+    if PRODUCTION_MODE:
+        PHOTO_DIR = os.getenv('PROD_PHOTO_DIR')
+    else:
+        PHOTO_DIR = os.getenv('TEST_PHOTO_DIR')
 

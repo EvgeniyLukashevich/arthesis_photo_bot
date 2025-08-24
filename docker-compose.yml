@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  bot:
+    image: python:3.11-slim
+    container_name: arthesis-photo-bot
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+      - ./photos:/app/photos
+      - ./backups:/app/backups
+      - ./.env:/app/.env
+      - ./requirements.txt:/app/requirements.txt
+    environment:
+      - DB_URL=sqlite+aiosqlite:////app/data/app.db
+      - PHOTOS_DIR=/app/photos
+    command: >
+      sh -c "pip install -r requirements.txt &&
+             [ ! -f /app/data/app.db ] && python -m src.cli db init || true &&
+             python -m src.bot.main"

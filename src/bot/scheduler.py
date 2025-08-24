@@ -1,14 +1,17 @@
 from aiogram.enums import ParseMode
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from aiogram import Bot
+from aiogram import Bot, exceptions
 from aiogram.types import FSInputFile
 from src.database import AsyncSessionLocal
 from src.models import Post, AdPost, InstantPost
 from sqlalchemy import select, func, update
 from datetime import datetime, timezone
 from src.core import Config
+import logging
 
 sched = AsyncIOScheduler()
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CAPTION = (f'📸 <b>УВАЖАЕМЫЕ ПОДПИСЧИКИ!</b> 📸\n\n'
                    f'Мы невероятно рады видеть Вас на нашем канале!\n'
@@ -71,10 +74,10 @@ def regular_post_caption(regular_post: Post):
     #     result += f'📷\n\n'
 
     if regular_post.title:
-        result += f'<b>{regular_post.title}</b>\n'
+        result += f'<b>{regular_post.title}</b>\n\n'
 
     if regular_post.author:
-        result += f'Автор: {regular_post.author}\n'
+        result += f'Автор: <b>{regular_post.author}</b>\n'
 
     if regular_post.date and regular_post.location:
         result += f'{regular_post.location}; {regular_post.date}\n'
@@ -98,6 +101,8 @@ def regular_post_caption(regular_post: Post):
 
 async def send_post(bot: Bot, post: Post):
     try:
+        logger.info(f"🖼️ Отправка поста {post.id} в чат {Config.CHAT_ID}")
+
         if isinstance(post, Post):
             caption = regular_post_caption(post)
         elif isinstance(post, AdPost):
@@ -119,39 +124,74 @@ async def send_post(bot: Bot, post: Post):
             )
             return
 
-        await bot.send_photo(
+        logger.debug(f"📨 Отправляю фото в Telegram API...")
+
+        photo_path = post.photo_path.replace('@', Config.PHOTO_DIR)
+
+        print(f'PROD: {Config.PRODUCTION_MODE}')
+        if Config.PRODUCTION_MODE:
+            photo_path = photo_path.replace('\\', '/')
+        else:
+            photo_path = photo_path.replace('/', '\\')
+
+        print(f'PHOTO PATH: {Config.PHOTO_DIR}')
+        print(f'PHOTO PATH: {photo_path}')
+        result = await bot.send_photo(
             chat_id=Config.CHAT_ID,
-            photo=FSInputFile(post.photo_path),
+            photo=FSInputFile(photo_path),
             caption=caption,
             parse_mode=Config.PARSE_MODE
         )
+        logger.info(f"✅ Пост отправлен успешно! Message ID: {result.message_id}")
+
+    except exceptions.TelegramForbiddenError as e:
+        logger.error(f"🚫 Бот заблокирован или не имеет доступа к чату: {e}")
+    except exceptions.TelegramBadRequest as e:
+        logger.error(f"❌ Неверный запрос к Telegram API: {e}")
     except Exception as e:
-        print(f"Ошибка при отправке поста: {e}")
+        logger.error(f"💥 Критическая ошибка отправки: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 
 async def publish_regular_post(bot: Bot):
-    async with AsyncSessionLocal() as db:
-        stmt = (
-            select(Post)
-            .where(Post.is_active == True, Post.shown == False)
-            .order_by(func.random())
-            .limit(1)
-        )
-        post = (await db.execute(stmt)).scalar_one_or_none()
+    logger.info("⏰ Запуск publish_regular_post")
 
-        if not post:
-            # все показаны — сброс
-            await db.execute(
-                update(Post).where(Post.is_active == True).values(shown=False)
+    try:
+        async with AsyncSessionLocal() as db:
+            stmt = (
+                select(Post)
+                .where(Post.is_active == True, Post.shown == False)
+                .order_by(func.random())
+                .limit(1)
             )
-            await db.commit()
             post = (await db.execute(stmt)).scalar_one_or_none()
 
-        if post:
-            post.shown = True
-            await db.commit()
-            await send_post(bot, post)  # отправляем в telegram
-            print(f"POSTED: {post.title}")
+            logger.info(f"📊 Найден пост для публикации: {post}")
+
+            if not post:
+                logger.info("📭 Активные непоказанные посты не найдены, сбрасываю флаги shown")
+                # все показаны — сброс
+                await db.execute(
+                    update(Post).where(Post.is_active == True).values(shown=False)
+                )
+                await db.commit()
+                post = (await db.execute(stmt)).scalar_one_or_none()
+                logger.info(f"🔄 После сброса найден пост: {post}")
+
+            if post:
+                post.shown = True
+                await db.commit()
+                logger.info(f"📤 Публикую пост: {post.title}")
+                await send_post(bot, post)
+                logger.info(f"✅ Пост опубликован: {post.title}")
+            else:
+                logger.warning("⚠️ Посты для публикации не найдены даже после сброса")
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка в publish_regular_post: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 
 async def publish_instant_or_ad(bot: Bot):
@@ -204,9 +244,11 @@ async def publish_instant_or_ad(bot: Bot):
 def start_scheduler(bot: Bot):
     sched.add_job(
         publish_regular_post,
-        trigger="cron",
-        hour=Config.REGULAR_POST_HOUR_UTC,
-        timezone='UTC',
+        # trigger="cron",
+        # hour=Config.REGULAR_POST_HOUR_UTC,
+        # timezone='UTC',
+        trigger="interval",
+        minutes=1,
         args=[bot],
     )
     sched.add_job(

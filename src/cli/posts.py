@@ -4,10 +4,68 @@ from typing import Optional
 from pathlib import Path
 from src.database import AsyncSessionLocal
 from src.models import Post
-from .utils import post_activity_toggle, update_post_field
+from .utils import post_activity_toggle, update_post_field, parse_filename
 
 
 app = typer.Typer()
+
+
+async def add_single_post(photo_file: str, author: str) -> bool:
+    """Добавляет один пост с парсингом метаданных из имени файла"""
+    try:
+        # Парсим имя файла
+        metadata = parse_filename(photo_file)
+
+        # Формируем относительный путь
+        author_dir = author.replace(' ', '_')
+        relative_path = f"@/{author_dir}/{photo_file}"
+
+        async with AsyncSessionLocal() as db:
+            db.add(Post(
+                photo_path=relative_path,
+                title=metadata['title'] or photo_file.stem.replace('_', ' ').title(),
+                author=author,
+                location=metadata['location'],
+                date=metadata['date'],
+                tags=metadata['tags'],
+                is_active=True,
+                shown=False
+            ))
+            await db.commit()
+
+        return True
+
+    except Exception as e:
+        typer.secho(f"  ❌  Ошибка обработки {photo_file}: {e}", fg=typer.colors.RED)
+        return False
+
+
+@app.command("mass-add")
+def bulk_add_from_folder(
+        folder: Path = typer.Option(..., "--folder", help="Папка с фотографиями"),
+        author: str = typer.Option(..., "--author", help="Автор фотографий")
+):
+    """Добавить все фото из папки с автоматическим парсингом метаданных"""
+
+    async def _process_folder():
+        success_count = 0
+        error_count = 0
+
+        # Ищем все jpg и png файлы
+        for photo_file in list(folder.glob("*.jpg")) + list(folder.glob("*.png")):
+            try:
+                if await add_single_post(photo_file.name, author):
+                    success_count += 1
+                    typer.secho(f"    ✅  Добавлен: {photo_file.name}", fg=typer.colors.GREEN)
+                else:
+                    error_count += 1
+            except Exception as e:
+                error_count += 1
+                typer.secho(f"  ❌ Ошибка с {photo_file.name}: {e}", fg=typer.colors.RED)
+
+        typer.secho(f"\n    📊  Итог: Успешно {success_count}, Ошибок {error_count}", fg=typer.colors.BLUE)
+
+    asyncio.run(_process_folder())
 
 
 @app.command("add")

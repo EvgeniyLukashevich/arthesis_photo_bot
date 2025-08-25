@@ -1,4 +1,3 @@
-from aiogram.enums import ParseMode
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot, exceptions
 from aiogram.types import FSInputFile
@@ -244,11 +243,9 @@ async def publish_instant_or_ad(bot: Bot):
 def start_scheduler(bot: Bot):
     sched.add_job(
         publish_regular_post,
-        # trigger="cron",
-        # hour=Config.REGULAR_POST_HOUR_UTC,
-        # timezone='UTC',
-        trigger="interval",
-        minutes=1,
+        trigger="cron",
+        hour=Config.REGULAR_POST_HOUR_UTC,
+        timezone='UTC',
         args=[bot],
     )
     sched.add_job(

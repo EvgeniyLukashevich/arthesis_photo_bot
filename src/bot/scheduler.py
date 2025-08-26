@@ -250,8 +250,9 @@ def start_scheduler(bot: Bot):
     )
     sched.add_job(
         publish_instant_or_ad,
-        trigger="interval",
-        minutes=Config.INSTANT_CHECK_MINUTES,
+        trigger="cron",
+        minute=Config.INSTANT_CHECK_MINUTES,
+        timezone='UTC',
         args=[bot],
     )
     sched.start()

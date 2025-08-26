@@ -51,8 +51,8 @@ def bulk_add_from_folder(
         success_count = 0
         error_count = 0
 
-        # Ищем все jpg и png файлы
-        for photo_file in list(folder.glob("*.jpg")) + list(folder.glob("*.png")):
+        # Ищем все jpg, jpeg, png файлы
+        for photo_file in list(folder.glob("*.jpg")) + list(folder.glob("*.png")) + list(folder.glob("*.jpeg")):
             try:
                 if await add_single_post(photo_file.name, author):
                     success_count += 1

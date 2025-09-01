@@ -84,7 +84,7 @@ def regular_post_caption(regular_post: Post):
         if regular_post.date:
             result += f'{regular_post.date}\n'
         if regular_post.location:
-            result += f'Место: {regular_post.location}\n'
+            result += f'{regular_post.location}\n'
 
     if regular_post.caption:
         result += f'\n<blockquote><i>{regular_post.caption}</i></blockquote>\n'

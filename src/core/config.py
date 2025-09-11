@@ -18,7 +18,7 @@ class Config:
     PARSE_MODE = ParseMode.HTML
     CHANNEL_LINK = os.getenv('CHANNEL_LINK')
     TIMEZONE = ZoneInfo('Europe/Moscow')
-    REGULAR_POST_HOUR_UTC = os.getenv('REGULAR_POST_HOUR_UTC', '4,6,9,12,15,17,18,19')
+    REGULAR_POST_HOUR_UTC = os.getenv('REGULAR_POST_HOUR_UTC', '5,10,11,15,16,17,18,19')
     INSTANT_CHECK_MINUTES = os.getenv('INSTANT_CHECK_MINUTES', '5,35')
     PRODUCTION_MODE = os.getenv('PRODUCTION_MODE', 'False').lower() == 'true'
     if PRODUCTION_MODE:

@@ -4,6 +4,9 @@ services:
   bot:
     image: python:3.11-slim
     container_name: arthesis-photo-bot
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: unless-stopped
     working_dir: /app
     volumes:

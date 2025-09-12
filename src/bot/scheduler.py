@@ -1,11 +1,14 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from aiogram import Bot, exceptions
+from aiogram import Bot, exceptions, types
 from aiogram.types import FSInputFile
 from src.database import AsyncSessionLocal
 from src.models import Post, AdPost, InstantPost
 from sqlalchemy import select, func, update
 from datetime import datetime, timezone
 from src.core import Config
+from random import choice as random_choice
+from random import randint as random_int
+import asyncio
 import logging
 
 sched = AsyncIOScheduler()
@@ -17,6 +20,8 @@ DEFAULT_CAPTION = (f'📸 <b>УВАЖАЕМЫЕ ПОДПИСЧИКИ!</b> 📸\n
                    f'И хотим выразить Вам огромную благодарность за '
                    f'Вашу обратную связь!\n\n'
                    f'ОГРОМНОЕ СПАСИБО!  ♥️ ♥️ ♥️')
+
+REGULAR_POST_REACTIONS = ['❤', '👍', '🔥', '👏', '😱', '🤩', '👌', '😍', '💯']
 
 
 def instant_post_caption(instant_post: InstantPost):
@@ -143,6 +148,8 @@ async def send_post(bot: Bot, post: Post):
         )
         logger.info(f"✅ Пост отправлен успешно! Message ID: {result.message_id}")
 
+        await add_reaction_to_post(bot, result.message_id)
+
     except exceptions.TelegramForbiddenError as e:
         logger.error(f"🚫 Бот заблокирован или не имеет доступа к чату: {e}")
     except exceptions.TelegramBadRequest as e:
@@ -151,6 +158,31 @@ async def send_post(bot: Bot, post: Post):
         logger.error(f"💥 Критическая ошибка отправки: {e}")
         import traceback
         logger.error(traceback.format_exc())
+
+
+async def add_reaction_to_post(bot: Bot, message_id: int):
+    try:
+        time_delay = random_int(3, 15)
+        reactions_list = REGULAR_POST_REACTIONS
+        reaction = random_choice(reactions_list)
+        await asyncio.sleep(time_delay)
+        await bot.set_message_reaction(
+            chat_id=Config.CHAT_ID,
+            message_id=message_id,
+            reaction=[types.ReactionTypeEmoji(emoji=reaction)],
+            is_big=False
+        )
+
+        logger.info(f"🎭 Добавлена реакция '{reaction}' к сообщению {message_id}")
+
+    except exceptions.TelegramBadRequest as e:
+        if "message reaction not allowed" in str(e).lower():
+            logger.warning("⚠️ Реакции не разрешены в этом чате/канале")
+        else:
+            logger.error(f"❌ Ошибка при добавлении реакции: {e}")
+
+    except Exception as e:
+        logger.error(f"💥 Ошибка в add_reaction_to_post: {e}")
 
 
 async def publish_regular_post(bot: Bot):
@@ -241,15 +273,14 @@ async def publish_instant_or_ad(bot: Bot):
 
 
 def start_scheduler(bot: Bot):
-    print(Config.REGULAR_POST_HOUR_UTC)
     sched.add_job(
         publish_regular_post,
-        trigger="cron",
-        hour=Config.REGULAR_POST_HOUR_UTC,
-        minute=0,
-        timezone='UTC',
-        # trigger='interval',
-        # minutes=1,
+        # trigger="cron",
+        # hour=Config.REGULAR_POST_HOUR_UTC,
+        # minute=0,
+        # timezone='UTC',
+        trigger='interval',
+        minutes=1,
         args=[bot],
     )
     sched.add_job(

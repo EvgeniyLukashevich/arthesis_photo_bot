@@ -1,3 +1,4 @@
+import aiogram.exceptions
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot, exceptions, types
 from aiogram.types import FSInputFile
@@ -104,60 +105,77 @@ def regular_post_caption(regular_post: Post):
 
 
 async def send_post(bot: Bot, post: Post):
-    try:
-        logger.info(f"🖼️ Отправка поста {post.id} в чат {Config.CHAT_ID}")
+    max_retries = 10
+    retry_delay = 15
 
-        if isinstance(post, Post):
-            caption = regular_post_caption(post)
-        elif isinstance(post, AdPost):
-            caption = ad_post_caption(post)
-        elif isinstance(post, InstantPost):
-            caption = instant_post_caption(post)
-        else:
-            caption = DEFAULT_CAPTION
-            await bot.send_message(
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"🖼️ Отправка поста {post.id} в чат {Config.CHAT_ID}")
+
+            if isinstance(post, Post):
+                caption = regular_post_caption(post)
+            elif isinstance(post, AdPost):
+                caption = ad_post_caption(post)
+            elif isinstance(post, InstantPost):
+                caption = instant_post_caption(post)
+            else:
+                caption = DEFAULT_CAPTION
+                await bot.send_message(
+                    chat_id=Config.CHAT_ID,
+                    text=caption,
+                    parse_mode=Config.PARSE_MODE
+                )
+                await bot.send_message(
+                    chat_id=Config.ADMIN_CHAT_ID,
+                    text='НЕПОЛАДКА С ОПРЕДЕЛЕНИЕМ КЛАССА '
+                         'ОТПРАВЛЯЕМОГО ПОСТА\n'
+                         'src/scheduler.py/send_post()'
+                )
+                return
+
+            logger.debug(f"📨 Отправляю фото в Telegram API...")
+
+            photo_path = post.photo_path.replace('@', Config.PHOTO_DIR)
+
+            if Config.PRODUCTION_MODE:
+                photo_path = photo_path.replace('\\', '/')
+            else:
+                photo_path = photo_path.replace('/', '\\')
+
+            result = await bot.send_photo(
                 chat_id=Config.CHAT_ID,
-                text=caption,
+                photo=FSInputFile(photo_path),
+                caption=caption,
                 parse_mode=Config.PARSE_MODE
             )
-            await bot.send_message(
-                chat_id=Config.ADMIN_CHAT_ID,
-                text='НЕПОЛАДКА С ОПРЕДЕЛЕНИЕМ КЛАССА '
-                     'ОТПРАВЛЯЕМОГО ПОСТА\n'
-                     'src/scheduler.py/send_post()'
-            )
-            return
 
-        logger.debug(f"📨 Отправляю фото в Telegram API...")
+            await add_reaction_to_post(bot, result.message_id)
 
-        photo_path = post.photo_path.replace('@', Config.PHOTO_DIR)
+            if attempt > 1:
+                await bot.send_message(chat_id=Config.ADMIN_CHAT_ID, text=f'Сообщение {result.message_id} '
+                                                                          f'наконец отправлено.')
 
-        print(f'PROD: {Config.PRODUCTION_MODE}')
-        if Config.PRODUCTION_MODE:
-            photo_path = photo_path.replace('\\', '/')
-        else:
-            photo_path = photo_path.replace('/', '\\')
+            logger.info(f"✅ Пост отправлен успешно! Message ID: {result.message_id}")
 
-        print(f'PHOTO PATH: {Config.PHOTO_DIR}')
-        print(f'PHOTO PATH: {photo_path}')
-        result = await bot.send_photo(
-            chat_id=Config.CHAT_ID,
-            photo=FSInputFile(photo_path),
-            caption=caption,
-            parse_mode=Config.PARSE_MODE
-        )
-        logger.info(f"✅ Пост отправлен успешно! Message ID: {result.message_id}")
+            break
 
-        await add_reaction_to_post(bot, result.message_id)
-
-    except exceptions.TelegramForbiddenError as e:
-        logger.error(f"🚫 Бот заблокирован или не имеет доступа к чату: {e}")
-    except exceptions.TelegramBadRequest as e:
-        logger.error(f"❌ Неверный запрос к Telegram API: {e}")
-    except Exception as e:
-        logger.error(f"💥 Критическая ошибка отправки: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+        except aiogram.exceptions.TelegramNetworkError as e:
+            error_message_for_admin = (f'ARThesis: фотоискусство. Проблема со связью и отправкой поста.\n\n'
+                                       f'Повторная отправка. Попытка # {attempt}\n\n'
+                                       f'ERROR: \n{e}')
+            await bot.send_message(chat_id=Config.ADMIN_CHAT_ID, text=error_message_for_admin)
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+            else:
+                raise e
+        except exceptions.TelegramForbiddenError as e:
+            logger.error(f"🚫 Бот заблокирован или не имеет доступа к чату: {e}")
+        except exceptions.TelegramBadRequest as e:
+            logger.error(f"❌ Неверный запрос к Telegram API: {e}")
+        except Exception as e:
+            logger.error(f"💥 Критическая ошибка отправки: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
 
 async def add_reaction_to_post(bot: Bot, message_id: int):

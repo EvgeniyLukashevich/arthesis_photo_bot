@@ -216,7 +216,7 @@ async def publish_regular_post(bot: Bot):
             )
             post = (await db.execute(stmt)).scalar_one_or_none()
 
-            logger.info(f"📊 Найден пост для публикации: {post}")
+            logger.info(f"📊 НАЙДЕН ПОСТ ДЛЯ ПУБЛИКАЦИИ. ID: {post.id}. NAME: {post.title}. AUTHOR: {post.author}")
 
             if not post:
                 logger.info("📭 Активные непоказанные посты не найдены, сбрасываю флаги shown")
@@ -226,14 +226,14 @@ async def publish_regular_post(bot: Bot):
                 )
                 await db.commit()
                 post = (await db.execute(stmt)).scalar_one_or_none()
-                logger.info(f"🔄 После сброса найден пост: {post}")
+                logger.info(f"🔄 После сброса найден пост: {post.id}")
 
             if post:
                 post.shown = True
                 await db.commit()
-                logger.info(f"📤 Публикую пост: {post.title}")
+                logger.info(f"📤 Публикую пост {post.id}")
                 await send_post(bot, post)
-                logger.info(f"✅ Пост опубликован: {post.title}")
+                logger.info(f"✅ ПОСТ ОПУБЛИКОВАН. ID: {post.id}. NAME: {post.title}. AUTHOR: {post.author}")
             else:
                 logger.warning("⚠️ Посты для публикации не найдены даже после сброса")
 
@@ -291,21 +291,33 @@ async def publish_instant_or_ad(bot: Bot):
 
 
 def start_scheduler(bot: Bot):
-    sched.add_job(
-        publish_regular_post,
-        trigger="cron",
-        hour=Config.REGULAR_POST_HOUR_UTC,
-        minute=0,
-        timezone='UTC',
-        # trigger='interval',
-        # minutes=1,
-        args=[bot],
-    )
-    sched.add_job(
-        publish_instant_or_ad,
-        trigger="cron",
-        minute=Config.INSTANT_CHECK_MINUTES,
-        timezone='UTC',
-        args=[bot],
-    )
+    if Config.PRODUCTION_MODE:
+        sched.add_job(
+            publish_regular_post,
+            trigger="cron",
+            hour=Config.REGULAR_POST_HOUR_UTC,
+            minute=0,
+            timezone='UTC',
+            args=[bot],
+        )
+        sched.add_job(
+            publish_instant_or_ad,
+            trigger="cron",
+            minute=Config.INSTANT_CHECK_MINUTES,
+            timezone='UTC',
+            args=[bot],
+        )
+    else:
+        sched.add_job(
+            publish_regular_post,
+            trigger='interval',
+            minutes=1,
+            args=[bot],
+        )
+        sched.add_job(
+            publish_instant_or_ad,
+            trigger="interval",
+            minutes=1,
+            args=[bot],
+        )
     sched.start()
